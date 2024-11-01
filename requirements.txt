@@ -1,0 +1,9 @@
+fasttext
+indic-transliteration
+tqdm
+h5py
+numpy
+torch
+transformers
+scikit-learn
+matplotlib
