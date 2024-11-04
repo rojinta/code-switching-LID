@@ -1,7 +1,10 @@
-from transformers import BertForTokenClassification, Trainer, TrainingArguments
+from transformers import AutoTokenizer
+from transformers import AutoModelForTokenClassification
 from transformers import get_linear_schedule_with_warmup
 import torch
+from torch.nn.utils import clip_grad_norm_
 from CS_Dataset import CSDataset
+from loss import HybridLoss
 
 from sklearn.metrics import f1_score, classification_report
 from torch.utils.data import DataLoader
@@ -9,6 +12,47 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
+import logging
+import os
+import random
+from datetime import datetime
+import json
+
+
+def setup_logging(log_dir="logs"):
+    """Set up logging configuration"""
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f"training_{timestamp}.log")
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()
+        ]
+    )
+    return logging.getLogger(__name__)
+
+
+def set_seed(seed=2731):
+    """Set random seeds for reproducibility"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def save_config(config, save_dir):
+    """Save training configuration"""
+    os.makedirs(save_dir, exist_ok=True)
+    config_path = os.path.join(save_dir, "config.json")
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4)
 
 
 def compute_class_weights(dataset):
@@ -16,12 +60,17 @@ def compute_class_weights(dataset):
     all_labels = []
     for batch in DataLoader(dataset, batch_size=32):
         labels = batch['labels'].view(-1)  # flatten
-        all_labels.extend(labels.cpu().numpy())
+        valid_labels = [l.item() for l in labels if l.item() != -100]
+        all_labels.extend(valid_labels)
 
     # calculate class weights
     class_counts = np.bincount(all_labels)
-    weights = 1 / class_counts
-    weights = weights / weights.min()  # 归一化
+
+    beta = 0.999
+    weights = (1 - beta) / (1 - beta ** class_counts)
+    # or use the following
+    # weights = np.sqrt(1 / class_counts)
+    weights = weights / weights.sum() * len(weights)
 
     return torch.FloatTensor(weights)
 
@@ -59,11 +108,11 @@ def evaluate_model(model, test_dataset, device):
 
     with torch.no_grad():
         for batch in dataloader:
-            inputs = batch['inputs_embeds'].to(device)
+            inputs = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
 
-            outputs = model(inputs_embeds=inputs, attention_mask=attention_mask)
+            outputs = model(inputs, attention_mask=attention_mask)
             predictions = torch.argmax(outputs.logits, dim=-1)
 
             all_predictions.append(predictions)
@@ -79,49 +128,71 @@ def evaluate_model(model, test_dataset, device):
     return metrics
 
 
-def train(num_epochs=200):
+def train(config):
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = BertForTokenClassification.from_pretrained('bert-base-uncased', num_labels=8).to(device)
+    """Main training function"""
+    logger = setup_logging()
+    set_seed(config['seed'])
 
-    train_dataset = CSDataset('train', 'en-es', mask_out_prob=0.4)
-    eval_dataset = CSDataset('dev', 'en-es', mask_out_prob=0)
-    test_dataset = CSDataset('dev', 'en-hi', mask_out_prob=0)
+    # Save configuration
+    save_dir = os.path.join("outputs", datetime.now().strftime("%Y%m%d_%H%M%S"))
+    save_config(config, save_dir)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+    pretrained_model = config['model_name']
+    tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
+
+    train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=0.25)
+    eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
+    test_dataset = CSDataset('lid_hineng/dev.conll', tokenizer, mask_out_prob=0)
+
+    label2id = train_dataset.label2id
+    id2label = train_dataset.id2label
+    label_list = list(label2id.keys())
+
+    train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
+
+    model = AutoModelForTokenClassification.from_pretrained(
+        pretrained_model, num_labels=len(label_list), id2label=id2label, label2id=label2id
+    ).to(device)
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'], weight_decay=config['weight_decay'])
     # add learning rate scheduler
-    num_training_steps = len(train_dataloader) * num_epochs
+    num_training_steps = len(train_dataloader) * config['num_epochs']
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=num_training_steps // 10,
+        num_warmup_steps=num_training_steps // config['warmup_ratio'],
         num_training_steps=num_training_steps
     )
 
     class_weights = compute_class_weights(train_dataset).to(device)
-    loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
+    # loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
+    loss_fn = HybridLoss(weights=class_weights, alpha=0.5, gamma=2.0)
 
     train_losses = []
     dev_f1_macro = []
     dev_f1_weighted = []
+    best_f1 = 0
 
     model.train()
-    for epoch in range(num_epochs):
+    logger.info("Starting training...")
+    for epoch in range(config['num_epochs']):
         epoch_loss = 0
-        for batch in tqdm(train_dataloader):
-            inputs = batch['inputs_embeds'].to(device)
+        for batch in tqdm(train_dataloader, desc=f"Epoch {epoch + 1}/{config['num_epochs']}"):
+            inputs = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
 
-            outputs = model(inputs_embeds=inputs, attention_mask=attention_mask)
+            outputs = model(inputs, attention_mask=attention_mask)
             loss = loss_fn(outputs.logits.view(-1, model.config.num_labels), labels.view(-1))
 
             optimizer.zero_grad()
             loss.backward()
+            clip_grad_norm_(model.parameters(), 1.0)
             scheduler.step()
             optimizer.step()
 
@@ -134,77 +205,77 @@ def train(num_epochs=200):
         dev_metrics = evaluate_model(model, eval_dataset, device)
         dev_f1_macro.append(dev_metrics['f1_macro'])  # F1 Macro
         dev_f1_weighted.append(dev_metrics['f1_weighted'])  # F1 Weighted
-
         print(
-            f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {average_loss:.4f}, Dev F1 Macro: {dev_metrics['f1_macro']:.4f}, Dev F1 Weighted: {dev_metrics['f1_weighted']:.4f}")
+            f"Epoch {epoch + 1}/{config['num_epochs']}, Train Loss: {average_loss:.4f}, Dev F1 Macro: {dev_metrics['f1_macro']:.4f}, "
+            f"Dev F1 Weighted: {dev_metrics['f1_weighted']:.4f}")
 
+        logger.info(
+            f"Epoch {epoch + 1}/{config['num_epochs']}: "
+            f"Train Loss = {average_loss:.4f}, "
+            f"Dev F1 Macro = {dev_metrics['f1_macro']:.4f}, "
+            f"Dev F1 Weighted = {dev_metrics['f1_weighted']:.4f}"
+        )
+
+        # Save best model
+        if dev_metrics['f1_macro'] > best_f1:
+            best_f1 = dev_metrics['f1_macro']
+            model_save_path = os.path.join(save_dir, "best_model")
+            model.save_pretrained(model_save_path)
+            tokenizer.save_pretrained(model_save_path)
+            logger.info(f"Saved new best model with F1 Macro: {best_f1:.4f}")
+
+    logger.info("Evaluating on test set...")
     test_metrics = evaluate_model(model, test_dataset, device)
+    logger.info(f"Test Results: F1 Macro = {test_metrics['f1_macro']:.4f}, "
+                f"F1 Weighted = {test_metrics['f1_weighted']:.4f}")
     print(f"Test F1 Macro: {test_metrics['f1_macro']:.4f}, Test F1 Weighted: {test_metrics['f1_weighted']:.4f}")
 
-    return train_losses, dev_f1_macro, dev_f1_weighted
+    # Plot training curves
+    plt.figure(figsize=(12, 4))
 
-    # training_args = TrainingArguments(
-    #     output_dir='results',
-    #     evaluation_strategy='epoch',
-    #     learning_rate=2e-5,
-    #     per_device_train_batch_size=64,
-    #     per_device_eval_batch_size=64,
-    #     num_train_epochs=1,
-    #     logging_dir='logs',
-    #     logging_steps=10,
-    #     save_strategy="epoch"
-    # )
-    #
-    # trainer = Trainer(
-    #     model=model,
-    #     args=training_args,
-    #     train_dataset=train_dataset,
-    #     eval_dataset=eval_dataset,
-    # )
-    #
-    # trainer.train()
-    #
-    # print("\nEvaluating on test set...")
-    # test_metrics = evaluate_model(model, test_dataset, device)
-    #
-    # print("\nTest Set Results:")
-    # print(f"Macro F1: {test_metrics['f1_macro']:.4f}")
-    # print(f"Weighted F1: {test_metrics['f1_weighted']:.4f}")
-    # print("\nDetailed Classification Report:")
-    # for label, metrics in test_metrics['classification_report'].items():
-    #     if isinstance(metrics, dict):
-    #         print(f"\nClass {label}:")
-    #         print(f"Precision: {metrics['precision']:.4f}")
-    #         print(f"Recall: {metrics['recall']:.4f}")
-    #         print(f"F1-score: {metrics['f1-score']:.4f}")
-    #         print(f"Support: {metrics['support']}")
-    #
-    #     save_path = 'test_results.txt'
-    #     with open(save_path, 'w') as f:
-    #         f.write("Test Set Results:\n")
-    #         f.write(f"Macro F1: {test_metrics['f1_macro']:.4f}\n")
-    #         f.write(f"Weighted F1: {test_metrics['f1_weighted']:.4f}\n")
-    #         f.write("\nDetailed Classification Report:\n")
-    #         for label, metrics in test_metrics['classification_report'].items():
-    #             if isinstance(metrics, dict):
-    #                 f.write(f"\nClass {label}:\n")
-    #                 f.write(f"Precision: {metrics['precision']:.4f}\n")
-    #                 f.write(f"Recall: {metrics['recall']:.4f}\n")
-    #                 f.write(f"F1-score: {metrics['f1-score']:.4f}\n")
-    #                 f.write(f"Support: {metrics['support']}\n")
-    #
-    #     print(f"\nResults have been saved to {save_path}")
+    plt.subplot(1, 2, 1)
+    plt.plot(train_losses)
+    plt.xlabel('Epoch')
+    plt.ylabel('Training Loss')
+    plt.title('Training Loss Curve')
+
+    plt.subplot(1, 2, 2)
+    plt.plot(dev_f1_macro, label='F1 Macro')
+    plt.plot(dev_f1_weighted, label='F1 Weighted')
+    plt.xlabel('Epoch')
+    plt.ylabel('F1 Score')
+    plt.title('Validation F1 Scores')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "training_curves.png"))
+    plt.close()
+
+    return {
+        'train_losses': train_losses,
+        'dev_f1_macro': dev_f1_macro,
+        'dev_f1_weighted': dev_f1_weighted,
+        'test_metrics': test_metrics,
+        'best_f1': best_f1
+    }
 
 
 if __name__ == "__main__":
-    losses, f1_macro, f1_weighted = train()
+    config = {
+        'model_name': "bert-base-multilingual-cased",
+        'train_file': 'lid_spaeng/train.conll',
+        'eval_file': 'lid_spaeng/dev.conll',
+        'test_file': 'lid_hineng/train.conll',
+        'batch_size': 128,
+        'learning_rate': 5e-5,
+        'weight_decay': 0.01,
+        'num_epochs': 5,
+        'warmup_ratio': 10,
+        'max_grad_norm': 1.0,
+        'seed': 2137
+    }
 
-    # Plot the training loss
-    plt.plot(losses)
-    plt.xlabel('Epoch')
-    plt.ylabel('Training Loss')
-    plt.title('Training Loss')
-    plt.show()
+    results = train(config)
 
 
 

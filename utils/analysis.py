@@ -1,63 +1,50 @@
-def read_conll_file(file_path):
-    sentences = []
-    sentence = []
+from CS_Dataset import CSDataset
+from transformers import AutoTokenizer
 
-    with open(file_path, 'r', encoding='utf-8') as file:
-        for line in file:
-            if '#' in line:
-                continue
-            # Strip any surrounding whitespace or newline
-            line = line.strip()
-
-            # If line is empty, it marks the end of a sentence
-            if not line:
-                if sentence:  # Add sentence if not empty
-                    sentences.append(sentence)
-                    sentence = []  # Reset for next sentence
-            else:
-                # Split the line by whitespace to get columns (e.g., token, POS tag, etc.)
-                columns = line.split()
-                sentence.append(columns)
-
-        # Add the last sentence if file does not end with an empty line
-        if sentence:
-            sentences.append(sentence)
-
-    return sentences
-
-
-train = read_conll_file('../lid_hineng/train.conll')
-val = read_conll_file('../lid_hineng/dev.conll')
-test = read_conll_file('../lid_hineng/test.conll')
-
-# Check all labels
-labels = set()
-for sentence in train:
-    for token in sentence:
-        labels.add(token[1])
-for sentence in val:
-    for token in sentence:
-        labels.add(token[1])
-
-print(labels)
-
-# See the distribution of labels
-label_distribution = {}
-for sentence in train:
-    for token in sentence:
-        label = token[1]
-        if label in label_distribution:
-            label_distribution[label] += 1
-        else:
-            label_distribution[label] = 1
-
-print(label_distribution)
-# plot the distribution
 import matplotlib.pyplot as plt
 
-plt.bar(label_distribution.keys(), label_distribution.values())
-plt.xlabel('Label')
-plt.ylabel('Frequency')
-plt.title('Label Distribution')
+if __name__ == "__main__":
+    pretrained_model = "bert-base-multilingual-cased"
+    tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
 
-plt.show()
+    train_dataset = CSDataset('../lid_spaeng/train.conll', tokenizer, mask_out_prob=0)
+    eval_dataset = CSDataset('../lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
+    test_dataset = CSDataset('../lid_hineng/dev.conll', tokenizer, mask_out_prob=0)
+
+    stats_train = train_dataset.get_statistics()
+    stats_eval = eval_dataset.get_statistics()
+    stats_test = test_dataset.get_statistics()
+    print(
+        f"Train dataset statistics: {stats_train}, Eval dataset statistics: {stats_eval}, Test dataset statistics: {stats_test}")
+    # whole average sentence of train, dev and test
+    ave_len = stats_train['avg_sequence_length'] + stats_eval['avg_sequence_length'] + stats_test['avg_sequence_length']
+    ave_len /= 3
+    print(f"Average sentence length: {ave_len}")
+
+    label_dist1 = train_dataset.get_label_distribution()
+    label_dist2 = eval_dataset.get_label_distribution()
+    label_dist3 = test_dataset.get_label_distribution()
+    print(
+        f"Train dataset label distribution: {label_dist1}, Eval dataset label distribution: {label_dist2}, Test dataset label distribution: {label_dist3}")
+
+    # Draw the label distribution, sort by label name
+    plt.figure(figsize=(15, 5))
+    plt.subplot(1, 3, 1)
+    # sort
+    label_dist1 = dict(sorted(label_dist1.items()))
+    label_dist2 = dict(sorted(label_dist2.items()))
+    label_dist3 = dict(sorted(label_dist3.items()))
+    plt.bar(label_dist1.keys(), label_dist1.values())
+    plt.title("Train dataset label distribution")
+    plt.xticks(rotation=90)
+    plt.subplot(1, 3, 2)
+    plt.bar(label_dist2.keys(), label_dist2.values())
+    plt.title("Eval dataset label distribution")
+    plt.xticks(rotation=90)
+    plt.subplot(1, 3, 3)
+    plt.bar(label_dist3.keys(), label_dist3.values())
+    plt.title("Test dataset label distribution")
+    plt.xticks(rotation=90)
+    plt.tight_layout()
+    plt.savefig("../plot/label_distribution.png")
+    plt.show()
