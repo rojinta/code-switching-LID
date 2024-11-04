@@ -1,6 +1,8 @@
 lid_hineng/
 lid_spaeng/
 
+outputs/
+
 __pycache__/
 
 .idea/

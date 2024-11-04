@@ -269,7 +269,7 @@ if __name__ == "__main__":
         'batch_size': 128,
         'learning_rate': 5e-5,
         'weight_decay': 0.01,
-        'num_epochs': 5,
+        'num_epochs': 10,
         'warmup_ratio': 10,
         'max_grad_norm': 1.0,
         'seed': 2137
