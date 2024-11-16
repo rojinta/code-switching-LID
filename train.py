@@ -8,6 +8,7 @@ from loss import HybridLoss
 
 from sklearn.metrics import f1_score, classification_report
 from torch.utils.data import DataLoader
+from torch.utils.data import WeightedRandomSampler
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -66,10 +67,15 @@ def compute_class_weights(dataset):
     # calculate class weights
     class_counts = np.bincount(all_labels)
 
-    beta = 0.999
-    weights = (1 - beta) / (1 - beta ** class_counts)
-    # or use the following
-    # weights = np.sqrt(1 / class_counts)
+    n_samples = len(all_labels)
+    n_classes = len(class_counts)
+
+    weights = n_samples / (n_classes * class_counts + 1e-5)
+
+    # weights = 1 + np.log(weights)
+    weights = np.sqrt(weights)
+
+    # Normalize the weights
     weights = weights / weights.sum() * len(weights)
 
     return torch.FloatTensor(weights)
@@ -77,8 +83,9 @@ def compute_class_weights(dataset):
 
 def compute_metrics(pred_labels, true_labels, attention_mask):
     # only consider the active parts of the sequence
-    active_labels = true_labels[attention_mask == 1]
-    active_preds = pred_labels[attention_mask == 1]
+    valid_mask = (attention_mask == 1) & (true_labels != -100)
+    active_labels = true_labels[valid_mask]
+    active_preds = pred_labels[valid_mask]
 
     f1_macro = f1_score(active_labels.cpu(), active_preds.cpu(), average='macro', zero_division=0)
     f1_weighted = f1_score(active_labels.cpu(), active_preds.cpu(), average='weighted', zero_division=0)
@@ -128,11 +135,48 @@ def evaluate_model(model, test_dataset, device):
     return metrics
 
 
+def create_balanced_sampler(dataset):
+    """
+    Create a balanced sampler for imbalanced datasets
+
+    Args:
+        dataset: PyTorch Dataset object
+
+    Returns:
+        WeightedRandomSampler object
+    """
+
+    """
+    p.s. Potential improvement direction!
+    """
+    labels = []
+    for batch in DataLoader(dataset, batch_size=32):
+        labels.extend(batch['labels'].view(-1).tolist())
+
+    # calculate class weights
+    class_counts = np.bincount(labels)
+    class_weights = 1.0 / class_counts
+
+    # create sample weights
+    sample_weights = [class_weights[label] for label in labels]
+
+    # create sampler
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
+    )
+
+    return sampler
+
+
 def train(config):
     if torch.backends.mps.is_available():
         device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cpu")
 
     """Main training function"""
     logger = setup_logging()
@@ -148,13 +192,14 @@ def train(config):
 
     train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=0.25)
     eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
-    test_dataset = CSDataset('lid_hineng/dev.conll', tokenizer, mask_out_prob=0)
+    test_dataset = CSDataset('lid_nepeng/dev.conll', tokenizer, mask_out_prob=0)
 
     label2id = train_dataset.label2id
     id2label = train_dataset.id2label
     label_list = list(label2id.keys())
 
     train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
+    # train_dataloader = create_balanced_sampler(train_dataset)
 
     model = AutoModelForTokenClassification.from_pretrained(
         pretrained_model, num_labels=len(label_list), id2label=id2label, label2id=label2id
@@ -170,8 +215,9 @@ def train(config):
     )
 
     class_weights = compute_class_weights(train_dataset).to(device)
+    print(f"Class Weights: {class_weights}")
     # loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
-    loss_fn = HybridLoss(weights=class_weights, alpha=0.5, gamma=2.0)
+    loss_fn = HybridLoss(class_weights, gamma=1.0)
 
     train_losses = []
     dev_f1_macro = []
@@ -187,14 +233,15 @@ def train(config):
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
 
-            outputs = model(inputs, attention_mask=attention_mask)
-            loss = loss_fn(outputs.logits.view(-1, model.config.num_labels), labels.view(-1))
-
             optimizer.zero_grad()
+            outputs = model(inputs, attention_mask=attention_mask)
+            loss = loss_fn(outputs.logits.view(-1, model.config.num_labels),
+                           labels.view(-1))
+
             loss.backward()
             clip_grad_norm_(model.parameters(), 1.0)
-            scheduler.step()
             optimizer.step()
+            scheduler.step()
 
             epoch_loss += loss.item()
 
@@ -267,10 +314,10 @@ if __name__ == "__main__":
         'eval_file': 'lid_spaeng/dev.conll',
         'test_file': 'lid_hineng/train.conll',
         'batch_size': 128,
-        'learning_rate': 5e-5,
+        'learning_rate': 2e-5,
         'weight_decay': 0.01,
         'num_epochs': 10,
-        'warmup_ratio': 10,
+        'warmup_ratio': 0.1,
         'max_grad_norm': 1.0,
         'seed': 2137
     }

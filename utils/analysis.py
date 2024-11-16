@@ -9,7 +9,7 @@ if __name__ == "__main__":
 
     train_dataset = CSDataset('../lid_spaeng/train.conll', tokenizer, mask_out_prob=0)
     eval_dataset = CSDataset('../lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
-    test_dataset = CSDataset('../lid_hineng/dev.conll', tokenizer, mask_out_prob=0)
+    test_dataset = CSDataset('../lid_nepeng/train.conll', tokenizer, mask_out_prob=0)
 
     stats_train = train_dataset.get_statistics()
     stats_eval = eval_dataset.get_statistics()

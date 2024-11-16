@@ -16,10 +16,12 @@ class CSDataset(Dataset):
 
         self.sentences, self.labels, all_labels = self._read_conll_file(file_path)
 
-        label2id = {label: idx for idx, label in enumerate(sorted(set(all_labels)))}
-        # sort by label name
-        self.label2id = dict(sorted(label2id.items()))
-        self.id2label = {idx: label for label, idx in self.label2id.items()}
+        # label2id = {label: idx for idx, label in enumerate(sorted(set(all_labels)))}
+        # # sort by label name
+        # self.label2id = dict(sorted(label2id.items()))
+        # self.id2label = {idx: label for label, idx in self.label2id.items()}
+        self.label2id = {"lang1": 0, "lang2": 1, "other": 2}
+        self.id2label = {0: "lang1", 1: "lang2", 2: "other"}
 
         self.encoded_data = self._preprocess_data()
 
@@ -52,6 +54,8 @@ class CSDataset(Dataset):
 
                     if len(parts) >= 2:  # make sure the line has at least two columns
                         token, label = parts[0], parts[-1]
+                        if label not in ['lang1', 'lang2', 'other']:
+                            label = 'other'
                         current_sentence.append(token)
                         current_labels.append(label)
                         all_labels.add(label)
