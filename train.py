@@ -190,7 +190,7 @@ def train(config):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
 
 
-    train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=0.25)
+    train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=0)
     eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
     test_dataset = CSDataset('lid_nepeng/dev.conll', tokenizer, mask_out_prob=0)
 
@@ -316,7 +316,7 @@ if __name__ == "__main__":
         'batch_size': 128,
         'learning_rate': 2e-5,
         'weight_decay': 0.01,
-        'num_epochs': 10,
+        'num_epochs': 50,
         'warmup_ratio': 0.1,
         'max_grad_norm': 1.0,
         'seed': 2137
