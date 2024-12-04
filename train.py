@@ -6,7 +6,7 @@ from torch.nn.utils import clip_grad_norm_
 from CS_Dataset import CSDataset
 from loss import HybridLoss
 
-from sklearn.metrics import f1_score, classification_report
+from sklearn.metrics import f1_score, classification_report, precision_score, recall_score, accuracy_score
 from torch.utils.data import DataLoader
 from torch.utils.data import WeightedRandomSampler
 import numpy as np
@@ -18,7 +18,6 @@ import os
 import random
 from datetime import datetime
 import json
-
 
 def setup_logging(log_dir="logs"):
     """Set up logging configuration"""
@@ -80,7 +79,6 @@ def compute_class_weights(dataset):
 
     return torch.FloatTensor(weights)
 
-
 def compute_metrics(pred_labels, true_labels, attention_mask):
     # only consider the active parts of the sequence
     valid_mask = (attention_mask == 1) & (true_labels != -100)
@@ -89,6 +87,9 @@ def compute_metrics(pred_labels, true_labels, attention_mask):
 
     f1_macro = f1_score(active_labels.cpu(), active_preds.cpu(), average='macro', zero_division=0)
     f1_weighted = f1_score(active_labels.cpu(), active_preds.cpu(), average='weighted', zero_division=0)
+    precision_macro = precision_score(active_labels.cpu(), active_preds.cpu(), average='macro', zero_division=0)
+    recall_macro = recall_score(active_labels.cpu(), active_preds.cpu(), average='macro', zero_division=0)
+    accuracy = accuracy_score(active_labels.cpu(), active_preds.cpu())
 
     # calculate classification report
     report = classification_report(
@@ -101,6 +102,9 @@ def compute_metrics(pred_labels, true_labels, attention_mask):
     return {
         'f1_macro': f1_macro,
         'f1_weighted': f1_weighted,
+        'precision_macro': precision_macro,
+        'recall_macro': recall_macro,
+        'accuracy': accuracy,
         'classification_report': report
     }
 
@@ -170,7 +174,7 @@ def create_balanced_sampler(dataset):
     return sampler
 
 
-def train(config):
+def train(config, mask_probability):
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     elif torch.cuda.is_available():
@@ -190,8 +194,8 @@ def train(config):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
 
 
-    train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=0)
-    eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
+    train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=mask_probability)
+    eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=mask_probability)
     test_dataset = CSDataset('lid_nepeng/dev.conll', tokenizer, mask_out_prob=0)
 
     label2id = train_dataset.label2id
@@ -271,6 +275,7 @@ def train(config):
             tokenizer.save_pretrained(model_save_path)
             logger.info(f"Saved new best model with F1 Macro: {best_f1:.4f}")
 
+    #Note will need to modify/remove the below printing as I tried to move it to be done in main with variable mask probs, and add plottings for the new metrics
     logger.info("Evaluating on test set...")
     test_metrics = evaluate_model(model, test_dataset, device)
     logger.info(f"Test Results: F1 Macro = {test_metrics['f1_macro']:.4f}, "
@@ -322,7 +327,28 @@ if __name__ == "__main__":
         'seed': 2137
     }
 
-    results = train(config)
+    mask_probabilities = [i * 0.1 for i in range(6)]  #0.0, 0.1, ..., 0.5, can modify as needed
+    test_results = {}
+
+    for mask_prob in mask_probabilities:
+        print(f"Training with mask probability: {mask_prob}")
+        results = train(config, mask_probability=mask_prob)
+       
+        model_dir = os.path.join("outputs", f"mask_{mask_prob}", "best_model")
+        model = AutoModelForTokenClassification.from_pretrained(model_dir).to("cuda" if torch.cuda.is_available() else "cpu")
+        tokenizer = AutoTokenizer.from_pretrained(model_dir)
+
+        test_dataset = CSDataset(config['test_file'], tokenizer, mask_out_prob=0)
+        test_metrics = evaluate_model(model, test_dataset, "cuda" if torch.cuda.is_available() else "cpu")
+        test_results[mask_prob] = test_metrics
+
+        print(f"Mask Probability {mask_prob} - Test Results:")
+        print(f"  Accuracy: {test_metrics['accuracy']:.4f}")
+        print(f"  F1 Macro: {test_metrics['f1_macro']:.4f}")
+        print(f"  F1 Weighted: {test_metrics['f1_weighted']:.4f}")
+        print(f"  Precision: {test_metrics['precision_macro']:.4f}")
+        print(f"  Recall: {test_metrics['recall_macro']:.4f}")
+
 
 
 
