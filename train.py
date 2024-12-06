@@ -281,16 +281,16 @@ def train(config, mask_probability):
             tokenizer.save_pretrained(model_save_path)
             logger.info(f"Saved new best model with F1 Macro: {best_f1:.4f}")
 
-            # Early stopping based on dev loss
-            if average_dev_loss < best_dev_loss - min_delta:
-                best_dev_loss = average_dev_loss
-                early_stopping_counter = 0
-            else:
-                early_stopping_counter += 1
+        # Early stopping based on dev loss
+        if average_dev_loss < best_dev_loss - min_delta:
+            best_dev_loss = average_dev_loss
+            early_stopping_counter = 0
+        else:
+            early_stopping_counter += 1
 
-            if early_stopping_counter >= patience:
-                logger.info(f"Early stopping triggered after {epoch + 1} epochs")
-                break
+        if early_stopping_counter >= patience:
+            logger.info(f"Early stopping triggered after {epoch + 1} epochs")
+            break
 
     logger.info("Evaluating on test set...")
     test_metrics = evaluate_model(model, test_dataset, device)
@@ -333,19 +333,19 @@ if __name__ == "__main__":
         'model_name': "bert-base-multilingual-cased",
         'train_file': 'lid_spaeng/train.conll',
         'eval_file': 'lid_spaeng/dev.conll',
-        'test_file': 'lid_hineng/train.conll',
-        'batch_size': 128,
+        'test_file': 'lid_nepeng/train.conll',
+        'batch_size': 512,
         'learning_rate': 2e-5,
         'weight_decay': 0.01,
-        'num_epochs': 1,
-        'patience': 1,
+        'num_epochs': 2000,
+        'patience': 10,
         'min_delta': 0.001,
         'warmup_ratio': 0.1,
         'max_grad_norm': 1.0,
-        'seed': 2137
+        'seed': 2024
     }
 
-    mask_probabilities = [i * 0.1 for i in range(7)]  #0.0, 0.1, ..., 0.5, can modify as needed
+    mask_probabilities = [i * 0.1 for i in range(6)]  #0.0, 0.1, ..., 0.5, can modify as needed
     test_results = {}
 
     for mask_prob in mask_probabilities:
