@@ -8,7 +8,6 @@ from loss import HybridLoss
 
 from sklearn.metrics import f1_score, classification_report, precision_score, recall_score, accuracy_score
 from torch.utils.data import DataLoader
-from torch.utils.data import WeightedRandomSampler
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -19,6 +18,9 @@ import random
 from datetime import datetime
 import json
 
+import sys
+
+
 def setup_logging(log_dir="logs"):
     """Set up logging configuration"""
     if not os.path.exists(log_dir):
@@ -27,12 +29,15 @@ def setup_logging(log_dir="logs"):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(log_dir, f"training_{timestamp}.log")
 
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.FileHandler(log_file),
-            logging.StreamHandler()
+            logging.StreamHandler(sys.stdout)
         ]
     )
     return logging.getLogger(__name__)
@@ -78,6 +83,7 @@ def compute_class_weights(dataset):
     weights = weights / weights.sum() * len(weights)
 
     return torch.FloatTensor(weights)
+
 
 def compute_metrics(pred_labels, true_labels, attention_mask):
     # only consider the active parts of the sequence
@@ -139,41 +145,6 @@ def evaluate_model(model, test_dataset, device):
     return metrics
 
 
-def create_balanced_sampler(dataset):
-    """
-    Create a balanced sampler for imbalanced datasets
-
-    Args:
-        dataset: PyTorch Dataset object
-
-    Returns:
-        WeightedRandomSampler object
-    """
-
-    """
-    p.s. Potential improvement direction!
-    """
-    labels = []
-    for batch in DataLoader(dataset, batch_size=32):
-        labels.extend(batch['labels'].view(-1).tolist())
-
-    # calculate class weights
-    class_counts = np.bincount(labels)
-    class_weights = 1.0 / class_counts
-
-    # create sample weights
-    sample_weights = [class_weights[label] for label in labels]
-
-    # create sampler
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True
-    )
-
-    return sampler
-
-
 def train(config, mask_probability):
     if torch.backends.mps.is_available():
         device = torch.device("mps")
@@ -195,7 +166,7 @@ def train(config, mask_probability):
 
 
     train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=mask_probability)
-    eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=mask_probability)
+    eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
     test_dataset = CSDataset('lid_nepeng/dev.conll', tokenizer, mask_out_prob=0)
 
     label2id = train_dataset.label2id
@@ -203,6 +174,7 @@ def train(config, mask_probability):
     label_list = list(label2id.keys())
 
     train_dataloader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
+    eval_dataloader = DataLoader(eval_dataset, batch_size=config['batch_size'], shuffle=False)
     # train_dataloader = create_balanced_sampler(train_dataset)
 
     model = AutoModelForTokenClassification.from_pretrained(
@@ -224,12 +196,21 @@ def train(config, mask_probability):
     loss_fn = HybridLoss(class_weights, gamma=1.0)
 
     train_losses = []
+    dev_losses = []
     dev_f1_macro = []
     dev_f1_weighted = []
+    dev_precision_macro = []
+    dev_recall_macro = []
+    dev_accuracy = []
     best_f1 = 0
 
+    patience = config['patience']  # early stopping
+    min_delta = config['min_delta']
+    early_stopping_counter = 0
+    best_dev_loss = float('inf')
+
     model.train()
-    logger.info("Starting training...")
+    logger.info(f"Starting training with mask probability: {mask_probability}")
     for epoch in range(config['num_epochs']):
         epoch_loss = 0
         for batch in tqdm(train_dataloader, desc=f"Epoch {epoch + 1}/{config['num_epochs']}"):
@@ -252,19 +233,44 @@ def train(config, mask_probability):
         average_loss = epoch_loss / len(train_dataloader)
         train_losses.append(average_loss)
 
+        # Validation phase
+        model.eval()
+        epoch_dev_loss = 0
+        with torch.no_grad():
+            for batch in tqdm(eval_dataloader, desc=f"Validation Epoch {epoch + 1}/{config['num_epochs']}"):
+                inputs = batch['input_ids'].to(device)
+                attention_mask = batch['attention_mask'].to(device)
+                labels = batch['labels'].to(device)
+
+                outputs = model(inputs, attention_mask=attention_mask)
+                loss = loss_fn(outputs.logits.view(-1, model.config.num_labels),
+                               labels.view(-1))
+                epoch_dev_loss += loss.item()
+
+        average_dev_loss = epoch_dev_loss / len(eval_dataloader)
+        dev_losses.append(average_dev_loss)
+
+
         # evaluate on the dev set
         dev_metrics = evaluate_model(model, eval_dataset, device)
         dev_f1_macro.append(dev_metrics['f1_macro'])  # F1 Macro
         dev_f1_weighted.append(dev_metrics['f1_weighted'])  # F1 Weighted
-        print(
-            f"Epoch {epoch + 1}/{config['num_epochs']}, Train Loss: {average_loss:.4f}, Dev F1 Macro: {dev_metrics['f1_macro']:.4f}, "
-            f"Dev F1 Weighted: {dev_metrics['f1_weighted']:.4f}")
+        dev_precision_macro.append(dev_metrics['precision_macro'])
+        dev_recall_macro.append(dev_metrics['recall_macro'])
+        dev_accuracy.append(dev_metrics['accuracy'])
+        # print(
+        #     f"Epoch {epoch + 1}/{config['num_epochs']}, Train Loss: {average_loss:.4f}, Dev F1 Macro: {dev_metrics['f1_macro']:.4f}, "
+        #     f"Dev F1 Weighted: {dev_metrics['f1_weighted']:.4f}")
 
         logger.info(
             f"Epoch {epoch + 1}/{config['num_epochs']}: "
             f"Train Loss = {average_loss:.4f}, "
+            f"Dev Loss = {average_dev_loss:.4f}, "
             f"Dev F1 Macro = {dev_metrics['f1_macro']:.4f}, "
             f"Dev F1 Weighted = {dev_metrics['f1_weighted']:.4f}"
+            f"Dev Precision Macro = {dev_metrics['precision_macro']:.4f}, "
+            f"Dev Recall Macro = {dev_metrics['recall_macro']:.4f}"
+            f"Dev Accuracy = {dev_metrics['accuracy']:.4f}"
         )
 
         # Save best model
@@ -275,12 +281,22 @@ def train(config, mask_probability):
             tokenizer.save_pretrained(model_save_path)
             logger.info(f"Saved new best model with F1 Macro: {best_f1:.4f}")
 
-    #Note will need to modify/remove the below printing as I tried to move it to be done in main with variable mask probs, and add plottings for the new metrics
+            # Early stopping based on dev loss
+            if average_dev_loss < best_dev_loss - min_delta:
+                best_dev_loss = average_dev_loss
+                early_stopping_counter = 0
+            else:
+                early_stopping_counter += 1
+
+            if early_stopping_counter >= patience:
+                logger.info(f"Early stopping triggered after {epoch + 1} epochs")
+                break
+
     logger.info("Evaluating on test set...")
     test_metrics = evaluate_model(model, test_dataset, device)
     logger.info(f"Test Results: F1 Macro = {test_metrics['f1_macro']:.4f}, "
                 f"F1 Weighted = {test_metrics['f1_weighted']:.4f}")
-    print(f"Test F1 Macro: {test_metrics['f1_macro']:.4f}, Test F1 Weighted: {test_metrics['f1_weighted']:.4f}")
+    # print(f"Test F1 Macro: {test_metrics['f1_macro']:.4f}, Test F1 Weighted: {test_metrics['f1_weighted']:.4f}")
 
     # Plot training curves
     plt.figure(figsize=(12, 4))
@@ -321,33 +337,35 @@ if __name__ == "__main__":
         'batch_size': 128,
         'learning_rate': 2e-5,
         'weight_decay': 0.01,
-        'num_epochs': 50,
+        'num_epochs': 1,
+        'patience': 1,
+        'min_delta': 0.001,
         'warmup_ratio': 0.1,
         'max_grad_norm': 1.0,
         'seed': 2137
     }
 
-    mask_probabilities = [i * 0.1 for i in range(6)]  #0.0, 0.1, ..., 0.5, can modify as needed
+    mask_probabilities = [i * 0.1 for i in range(7)]  #0.0, 0.1, ..., 0.5, can modify as needed
     test_results = {}
 
     for mask_prob in mask_probabilities:
         print(f"Training with mask probability: {mask_prob}")
         results = train(config, mask_probability=mask_prob)
        
-        model_dir = os.path.join("outputs", f"mask_{mask_prob}", "best_model")
-        model = AutoModelForTokenClassification.from_pretrained(model_dir).to("cuda" if torch.cuda.is_available() else "cpu")
-        tokenizer = AutoTokenizer.from_pretrained(model_dir)
-
-        test_dataset = CSDataset(config['test_file'], tokenizer, mask_out_prob=0)
-        test_metrics = evaluate_model(model, test_dataset, "cuda" if torch.cuda.is_available() else "cpu")
-        test_results[mask_prob] = test_metrics
-
-        print(f"Mask Probability {mask_prob} - Test Results:")
-        print(f"  Accuracy: {test_metrics['accuracy']:.4f}")
-        print(f"  F1 Macro: {test_metrics['f1_macro']:.4f}")
-        print(f"  F1 Weighted: {test_metrics['f1_weighted']:.4f}")
-        print(f"  Precision: {test_metrics['precision_macro']:.4f}")
-        print(f"  Recall: {test_metrics['recall_macro']:.4f}")
+        # model_dir = os.path.join("outputs", f"mask_{mask_prob}", "best_model")
+        # model = AutoModelForTokenClassification.from_pretrained(model_dir).to("cuda" if torch.cuda.is_available() else "cpu")
+        # tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        #
+        # test_dataset = CSDataset(config['test_file'], tokenizer, mask_out_prob=0)
+        # test_metrics = evaluate_model(model, test_dataset, "cuda" if torch.cuda.is_available() else "cpu")
+        # test_results[mask_prob] = test_metrics
+        #
+        # print(f"Mask Probability {mask_prob} - Test Results:")
+        # print(f"  Accuracy: {test_metrics['accuracy']:.4f}")
+        # print(f"  F1 Macro: {test_metrics['f1_macro']:.4f}")
+        # print(f"  F1 Weighted: {test_metrics['f1_weighted']:.4f}")
+        # print(f"  Precision: {test_metrics['precision_macro']:.4f}")
+        # print(f"  Recall: {test_metrics['recall_macro']:.4f}")
 
 
 

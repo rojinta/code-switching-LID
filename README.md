@@ -1,5 +1,7 @@
 # Demo of Code-Switching Language Identification Mask Out
 
+# [Outputs](https://drive.google.com/file/d/1qPCmsRjCW8hDfxfMY-CG04E7s-oXGCqL/view?usp=sharing)
+
 This is the demo and also proof of the concept
 
 ## File Structure
@@ -11,10 +13,6 @@ project_root/
 ├── loss.py
 ├── utils/
 │   └── build_datasets.py
-├── lid_hineng
-│   ├── dev.conll
-│   ├── test.conll
-│   └── train.conll
 ├── lid_spaeng
 │   ├── dev.conll
 │   ├── test.conll
@@ -30,7 +28,7 @@ project_root/
 
 `analysis.py` is for analyzing the information about the dataset, like number of classes and label distribution.
 
-We are using [LinCE datasets](https://ritual.uh.edu/lince/datasets), which are `lid_hineng` and  `lid_spaeng` with train, dev and test datasets in .conll format.
+We are using [LinCE datasets](https://ritual.uh.edu/lince/datasets), which are `lid_nepeng` and  `lid_spaeng` with train, dev and test datasets in .conll format.
 
 ## Train the model
 
@@ -62,13 +60,7 @@ Train the model on the English-Spanish with masking out and test on the English-
 ### 1. Only calculated the weights depend on the training data.
 ![label_distribution](plot/label_distribution.png)
 
-## Forward step
-
-### 1. Implement the code for other metrics.
-
-### 2. Implement the code on the test dataset after different models with different mask prob are trained and saved. Show the final results.
-
-### 3. Any potential optimization.
+### 
 
 
 
