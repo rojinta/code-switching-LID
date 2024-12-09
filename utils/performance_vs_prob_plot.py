@@ -9,10 +9,10 @@ def parse_logs(log_file):
     best_metrics = {}
     f1_macro_pattern = re.compile(r"F1 Macro: (\d+\.\d+)")
     metrics_pattern = re.compile(
-    r"Dev F1 Macro = (\d+\.\d+), Dev F1 Weighted = (\d+\.\d+)"
-    r"Dev Precision Macro = (\d+\.\d+), Dev Recall Macro = (\d+\.\d+)"
-    r"Dev Accuracy = (\d+\.\d+)"
-)
+        r"Dev F1 Macro = (\d+\.\d+), Dev F1 Weighted = (\d+\.\d+)"
+        r"Dev Precision Macro = (\d+\.\d+), Dev Recall Macro = (\d+\.\d+)"
+        r"Dev Accuracy = (\d+\.\d+)"
+    )
 
     with open(log_file, 'r') as f:
         for line in f:
@@ -44,6 +44,9 @@ def parse_logs(log_file):
 
 
 def aggregate_metrics(log_dir):
+    """
+    Aggregates metrics from all log files in the specified directory.
+    """
     aggregated_metrics = {}
     for log_file in os.listdir(log_dir):
         if log_file.endswith(".log"):  # Process only log files
@@ -52,9 +55,33 @@ def aggregate_metrics(log_dir):
             aggregated_metrics.update(file_metrics)
     return aggregated_metrics
 
-def plot_metrics(best_metrics, output_dir):
+def plot_f1_metrics(best_metrics, output_dir):
+    """
+    Plots F1 Macro and F1 Weighted metrics on the same plot.
+    """
     probabilities = sorted(best_metrics.keys())
-    metrics = ["F1 Macro", "F1 Weighted", "Precision Macro", "Recall Macro", "Accuracy"]
+    f1_macro_values = [best_metrics[prob]["F1 Macro"] for prob in probabilities]
+    f1_weighted_values = [best_metrics[prob]["F1 Weighted"] for prob in probabilities]
+    
+    os.makedirs(output_dir, exist_ok=True)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(probabilities, f1_macro_values, marker='o', label="F1 Macro", color="blue")
+    plt.plot(probabilities, f1_weighted_values, marker='o', label="F1 Weighted", color="green")
+    plt.title("Dev F1 Scores vs. Mask Probability")
+    plt.xlabel("Mask Probability")
+    plt.ylabel("F1 Score")
+    plt.legend()
+    plt.grid()
+    plt.savefig(os.path.join(output_dir, "f1_scores_vs_mask_probability.png"))
+    plt.close()
+
+def plot_individual_metrics(best_metrics, output_dir):
+    """
+    Plots individual metrics (other than F1 scores) for each mask probability.
+    """
+    probabilities = sorted(best_metrics.keys())
+    metrics = ["Precision Macro", "Recall Macro", "Accuracy"]
     
     os.makedirs(output_dir, exist_ok=True)
 
@@ -62,7 +89,7 @@ def plot_metrics(best_metrics, output_dir):
         values = [best_metrics[prob][metric] for prob in probabilities]
         plt.figure(figsize=(8, 6))
         plt.plot(probabilities, values, marker='o', label=metric)
-        plt.title(f"{metric} vs. Mask Probability")
+        plt.title(f"Dev {metric} vs. Mask Probability")
         plt.xlabel("Mask Probability")
         plt.ylabel(metric)
         plt.grid()
@@ -71,8 +98,9 @@ def plot_metrics(best_metrics, output_dir):
 
 # Paths for logs and plots
 log_directory = "../logs"  # Folder containing the log files
-plot_directory = "../plot"  # Folder to save the plots
+plot_directory = "../plots"  # Folder to save the plots
 
 # Parse logs and generate plots
 best_metrics = aggregate_metrics(log_directory)
-plot_metrics(best_metrics, plot_directory)
+plot_f1_metrics(best_metrics, plot_directory)
+plot_individual_metrics(best_metrics, plot_directory)
