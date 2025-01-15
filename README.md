@@ -15,19 +15,19 @@ The project uses datasets from the [LinCE benchmark](https://ritual.uh.edu/lince
 
 ## Usage
 
-1. Clone the repository:
+**1. Clone the repository**
 ```bash
 git clone https://github.com/Sean652039/code_switching_LID.git
 ```
-2. Install dependencies:
+**2. Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
-3. Train the model:
+**3. Train the model**
 ```bash
 python train.py --dataset_path /path/to/dataset --mask_probability 0.1
 ```
-4. Evaluate the model:
+**4. Evaluate the model**
 ```bash
 python evaluate.py --dataset_path /path/to/eval_dataset
 ```
