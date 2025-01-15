@@ -13,16 +13,6 @@ The project uses datasets from the [LinCE benchmark](https://ritual.uh.edu/lince
 - **SPA-ENG (Spanish-English)** for training.
 - **NEP-ENG (Nepali-English)** for cross-dataset evaluation.
 
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Sean652039/code_switching_LID.git
-
-2. Install dependencies:
-    ```bach
-    pip install -r requirements.txt
-
 ## Usage
 
 1. Clone the repository:
