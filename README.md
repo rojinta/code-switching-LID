@@ -1,66 +1,50 @@
-# Demo of Code-Switching Language Identification Mask Out
+# Mask Out: A Novel Regularization Method for Code-Switching Language Identification
 
-# [Outputs](https://drive.google.com/file/d/1qPCmsRjCW8hDfxfMY-CG04E7s-oXGCqL/view?usp=sharing)
+Mask Out is a novel method for word-level code-switching language identification, leveraging Multilingual BERT (mBERT) and a token-masking regularization technique. This approach enhances generalization in diverse linguistic contexts by selectively obscuring language-specific cues during training.
 
-This is the demo and also proof of the concept
+**Key Features**:
+- Designed to improve code-switching detection across multilingual datasets.
+- Utilizes a token-masking regularization method inspired by Dropout and MaskLID frameworks.
+- Achieves optimal performance with a masking probability of 0.1.
 
-## File Structure
+## Dataset
 
-```
-project_root/
-├── CS_Dataset.py
-├── train.py
-├── loss.py
-├── utils/
-│   └── build_datasets.py
-├── lid_spaeng
-│   ├── dev.conll
-│   ├── test.conll
-│   └── train.conll
-├── lid_nepeng
-│   ├── dev.conll
-│   ├── test.conll
-│   └── train.conll
-├── logs
-├── outputs
-└── plot
-```
+The project uses datasets from the [LinCE benchmark](https://ritual.uh.edu/lince/datasets), focusing on:
+- **SPA-ENG (Spanish-English)** for training.
+- **NEP-ENG (Nepali-English)** for cross-dataset evaluation.
 
-`analysis.py` is for analyzing the information about the dataset, like number of classes and label distribution.
+## Installation
 
-We are using [LinCE datasets](https://ritual.uh.edu/lince/datasets), which are `lid_nepeng` and  `lid_spaeng` with train, dev and test datasets in .conll format.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Sean652039/code_switching_LID.git
 
-## Train the model
+2. Install dependencies:
+    ```bach
+    pip install -r requirements.txt
 
+## Usage
+
+1. Clone the repository:
 ```bash
-python train.py
+git clone https://github.com/Sean652039/code_switching_LID.git
+```
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+3. Train the model:
+```bash
+python train.py --dataset_path /path/to/dataset --mask_probability 0.1
+```
+4. Evaluate the model:
+```bash
+python evaluate.py --dataset_path /path/to/eval_dataset
 ```
 
-Train the model on the English-Spanish with masking out and test on the English-Hindi.
+## Acknowledgments
 
-## Results
-![Loss](plot/training_curves.png)
-
-- Mask Out Prob = 0
-
-```txt
-2024-11-16 14:05:43,374 [INFO] Evaluating on test set...
-2024-11-16 14:05:44,601 [INFO] Test Results: F1 Macro = 0.8221, F1 Weighted = 0.8149
-```
-
-- Mask Out Prob = 0.15
-
-```txt
-2024-11-16 13:02:22,601 [INFO] Evaluating on test set...
-2024-11-16 13:02:23,879 [INFO] Test Results: F1 Macro = 0.8263, F1 Weighted = 0.8203
-```
-
-## Issue
-
-### 1. Only calculated the weights depend on the training data.
-![label_distribution](plot/label_distribution.png)
-
-### 
-
-
-
+This work is inspired by prior research in multilingual NLP, including contributions by:
+- **Dropout** by Nitish Srivastava et al.
+- **MaskLID** by Amir Hossein Kargaran et al.
+- **LinCE Benchmark** by Aguilar et al.
