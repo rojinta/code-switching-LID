@@ -5,7 +5,6 @@ from typing import List, Dict
 import logging
 import os
 
-
 class CSDataset(Dataset):
     def __init__(self, file_path, tokenizer, max_length=15, mask_out_prob=0.15, label_pad_token_id: int = -100):
         self.file_path = file_path
@@ -17,7 +16,7 @@ class CSDataset(Dataset):
         self.sentences, self.labels, all_labels = self._read_conll_file(file_path)
 
         # label2id = {label: idx for idx, label in enumerate(sorted(set(all_labels)))}
-        # # sort by label name
+        # sort by label name
         # self.label2id = dict(sorted(label2id.items()))
         # self.id2label = {idx: label for label, idx in self.label2id.items()}
         self.label2id = {"lang1": 0, "lang2": 1, "other": 2}
@@ -25,7 +24,7 @@ class CSDataset(Dataset):
 
         self.encoded_data = self._preprocess_data()
 
-        # # Set up logging
+        # Set up logging
         # self.logger = logging.getLogger(__name__)
 
         # hint: cache
@@ -33,7 +32,7 @@ class CSDataset(Dataset):
 
     def _read_conll_file(self, file_path: str) -> tuple[List[List[str]], List[List[str]], List[str]]:
         """
-        Read a CoNLL file and return sentences and labels.
+        Read a CoNLL file and return sentences and labels
         """
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -74,7 +73,7 @@ class CSDataset(Dataset):
 
     def _preprocess_data(self) -> List[Dict]:
         """
-        Preprocess the data by encoding the sentences and aligning the labels.
+        Preprocess the data by encoding the sentences and aligning the labels
         """
         encoded_data = []
 
@@ -133,7 +132,7 @@ class CSDataset(Dataset):
 
     def get_label_distribution(self) -> Dict[str, int]:
         """
-        Get the distribution of labels in the dataset.
+        Get the distribution of labels in the dataset
 
         Returns:
             Dictionary mapping label names to their counts
@@ -148,7 +147,7 @@ class CSDataset(Dataset):
 
     def get_statistics(self) -> Dict:
         """
-        Get various statistics about the dataset.
+        Get various statistics about the dataset
 
         Returns:
             Dictionary containing dataset statistics
@@ -164,4 +163,3 @@ class CSDataset(Dataset):
             'label_distribution': label_dist,
             'total_tokens': sum(seq_lengths)
         }
-

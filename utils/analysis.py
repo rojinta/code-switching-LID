@@ -16,7 +16,7 @@ if __name__ == "__main__":
     stats_test = test_dataset.get_statistics()
     print(
         f"Train dataset statistics: {stats_train}, Eval dataset statistics: {stats_eval}, Test dataset statistics: {stats_test}")
-    # whole average sentence of train, dev and test
+    # Whole average sentence of train, dev and test
     ave_len = stats_train['avg_sequence_length'] + stats_eval['avg_sequence_length'] + stats_test['avg_sequence_length']
     ave_len /= 3
     print(f"Average sentence length: {ave_len}")
@@ -27,10 +27,10 @@ if __name__ == "__main__":
     print(
         f"Train dataset label distribution: {label_dist1}, Eval dataset label distribution: {label_dist2}, Test dataset label distribution: {label_dist3}")
 
-    # Draw the label distribution, sort by label name
+    # Draw the label distribution and sort by label name
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
-    # sort
+    # Sort
     label_dist1 = dict(sorted(label_dist1.items()))
     label_dist2 = dict(sorted(label_dist2.items()))
     label_dist3 = dict(sorted(label_dist3.items()))
@@ -46,5 +46,5 @@ if __name__ == "__main__":
     plt.title("Test dataset label distribution")
     plt.xticks(rotation=90)
     plt.tight_layout()
-    plt.savefig("../plot/label_distribution.png")
+    plt.savefig("../plots/label_distribution.png")
     plt.show()

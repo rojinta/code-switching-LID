@@ -20,9 +20,10 @@ import json
 
 import sys
 
-
 def setup_logging(log_dir="logs"):
-    """Set up logging configuration"""
+    """
+    Set up logging configuration
+    """
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
@@ -42,33 +43,36 @@ def setup_logging(log_dir="logs"):
     )
     return logging.getLogger(__name__)
 
-
 def set_seed(seed=2731):
-    """Set random seeds for reproducibility"""
+    """
+    Set random seeds for reproducibility
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-
 def save_config(config, save_dir):
-    """Save training configuration"""
+    """
+    Save training configuration
+    """
     os.makedirs(save_dir, exist_ok=True)
     config_path = os.path.join(save_dir, "config.json")
     with open(config_path, "w") as f:
         json.dump(config, f, indent=4)
 
-
 def compute_class_weights(dataset):
-    """calculate class weights for imbalanced datasets"""
+    """
+    Calculate class weights for imbalanced datasets
+    """
     all_labels = []
     for batch in DataLoader(dataset, batch_size=32):
         labels = batch['labels'].view(-1)  # flatten
         valid_labels = [l.item() for l in labels if l.item() != -100]
         all_labels.extend(valid_labels)
 
-    # calculate class weights
+    # Calculate class weights
     class_counts = np.bincount(all_labels)
 
     n_samples = len(all_labels)
@@ -84,9 +88,8 @@ def compute_class_weights(dataset):
 
     return torch.FloatTensor(weights)
 
-
 def compute_metrics(pred_labels, true_labels, attention_mask):
-    # only consider the active parts of the sequence
+    # Only consider the active parts of the sequence
     valid_mask = (attention_mask == 1) & (true_labels != -100)
     active_labels = true_labels[valid_mask]
     active_preds = pred_labels[valid_mask]
@@ -97,7 +100,7 @@ def compute_metrics(pred_labels, true_labels, attention_mask):
     recall_macro = recall_score(active_labels.cpu(), active_preds.cpu(), average='macro', zero_division=0)
     accuracy = accuracy_score(active_labels.cpu(), active_preds.cpu())
 
-    # calculate classification report
+    # Calculate classification report
     report = classification_report(
         active_labels.cpu(),
         active_preds.cpu(),
@@ -113,7 +116,6 @@ def compute_metrics(pred_labels, true_labels, attention_mask):
         'accuracy': accuracy,
         'classification_report': report
     }
-
 
 def evaluate_model(model, test_dataset, device):
     model.eval()
@@ -144,7 +146,6 @@ def evaluate_model(model, test_dataset, device):
 
     return metrics
 
-
 def train(config, mask_probability):
     if torch.backends.mps.is_available():
         device = torch.device("mps")
@@ -153,7 +154,9 @@ def train(config, mask_probability):
     else:
         device = torch.device("cpu")
 
-    """Main training function"""
+    """
+    Main training function
+    """
     logger = setup_logging()
     set_seed(config['seed'])
 
@@ -163,7 +166,6 @@ def train(config, mask_probability):
 
     pretrained_model = config['model_name']
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
-
 
     train_dataset = CSDataset('lid_spaeng/train.conll', tokenizer, mask_out_prob=mask_probability)
     eval_dataset = CSDataset('lid_spaeng/dev.conll', tokenizer, mask_out_prob=0)
@@ -250,8 +252,7 @@ def train(config, mask_probability):
         average_dev_loss = epoch_dev_loss / len(eval_dataloader)
         dev_losses.append(average_dev_loss)
 
-
-        # evaluate on the dev set
+        # Evaluate on the dev set
         dev_metrics = evaluate_model(model, eval_dataset, device)
         dev_f1_macro.append(dev_metrics['f1_macro'])  # F1 Macro
         dev_f1_weighted.append(dev_metrics['f1_weighted'])  # F1 Weighted
@@ -327,7 +328,6 @@ def train(config, mask_probability):
         'best_f1': best_f1
     }
 
-
 if __name__ == "__main__":
     config = {
         'model_name': "bert-base-multilingual-cased",
@@ -355,19 +355,16 @@ if __name__ == "__main__":
         # model_dir = os.path.join("outputs", f"mask_{mask_prob}", "best_model")
         # model = AutoModelForTokenClassification.from_pretrained(model_dir).to("cuda" if torch.cuda.is_available() else "cpu")
         # tokenizer = AutoTokenizer.from_pretrained(model_dir)
-        #
+        
         # test_dataset = CSDataset(config['test_file'], tokenizer, mask_out_prob=0)
         # test_metrics = evaluate_model(model, test_dataset, "cuda" if torch.cuda.is_available() else "cpu")
         # test_results[mask_prob] = test_metrics
-        #
+        
         # print(f"Mask Probability {mask_prob} - Test Results:")
         # print(f"  Accuracy: {test_metrics['accuracy']:.4f}")
         # print(f"  F1 Macro: {test_metrics['f1_macro']:.4f}")
         # print(f"  F1 Weighted: {test_metrics['f1_weighted']:.4f}")
         # print(f"  Precision: {test_metrics['precision_macro']:.4f}")
         # print(f"  Recall: {test_metrics['recall_macro']:.4f}")
-
-
-
 
 

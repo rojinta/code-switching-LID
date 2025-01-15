@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class HybridLoss(nn.Module):
     def __init__(self, weight=None, gamma=2.0):
         super().__init__()

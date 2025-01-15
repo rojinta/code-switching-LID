@@ -4,7 +4,7 @@ import os
 
 def parse_logs(log_file):
     """
-    Parses a single log file to extract the best metrics for the corresponding mask probability.
+    Parses a single log file to extract the best metrics for the corresponding mask probability
     """
     best_metrics = {}
     f1_macro_pattern = re.compile(r"F1 Macro: (\d+\.\d+)")
@@ -45,7 +45,7 @@ def parse_logs(log_file):
 
 def aggregate_metrics(log_dir):
     """
-    Aggregates metrics from all log files in the specified directory.
+    Aggregate metrics from all log files in the specified directory
     """
     aggregated_metrics = {}
     for log_file in os.listdir(log_dir):
@@ -57,7 +57,7 @@ def aggregate_metrics(log_dir):
 
 def plot_f1_metrics(best_metrics, output_dir):
     """
-    Plots F1 Macro and F1 Weighted metrics on the same plot.
+    Plot F1 Macro and F1 Weighted metrics on the same plot
     """
     probabilities = sorted(best_metrics.keys())
     f1_macro_values = [best_metrics[prob]["F1 Macro"] for prob in probabilities]
@@ -78,7 +78,7 @@ def plot_f1_metrics(best_metrics, output_dir):
 
 def plot_individual_metrics(best_metrics, output_dir):
     """
-    Plots individual metrics (other than F1 scores) for each mask probability.
+    Plot individual metrics (other than F1 scores) for each mask probability
     """
     probabilities = sorted(best_metrics.keys())
     metrics = ["Precision Macro", "Recall Macro", "Accuracy"]
