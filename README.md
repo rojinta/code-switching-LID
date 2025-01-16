@@ -15,7 +15,7 @@ The project uses datasets from the [LinCE benchmark](https://ritual.uh.edu/lince
 
 ## Usage
 
-**1. Clone the repository**:
+**1. Clone the Repository**:
 ```bash
 git clone https://github.com/Sean652039/code_switching_LID.git
 ```
