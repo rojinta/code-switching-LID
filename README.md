@@ -17,7 +17,7 @@ The project uses datasets from the [LinCE benchmark](https://ritual.uh.edu/lince
 
 **1. Clone the Repository**:
 ```bash
-git clone https://github.com/Sean652039/code_switching_LID.git
+git clone https://github.com/rojinta/code-switching-LID.git
 ```
 **2. Install Dependencies**:
 ```bash
