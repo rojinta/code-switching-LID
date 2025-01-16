@@ -3,9 +3,9 @@
 Mask Out is a novel method for word-level code-switching language identification, leveraging Multilingual BERT (mBERT) and a token-masking regularization technique. This approach enhances generalization in diverse linguistic contexts by selectively obscuring language-specific cues during training.
 
 **Key Features**:
-- Designed to improve code-switching detection across multilingual datasets.
-- Utilizes a token-masking regularization method inspired by Dropout and MaskLID frameworks.
-- Achieves optimal performance with a masking probability of 0.1.
+- Designed to improve code-switching detection across multilingual datasets
+- Utilizes a token-masking regularization method inspired by Dropout and MaskLID frameworks
+- Achieves optimal performance with a masking probability of 0.1
 
 ## Dataset
 
