@@ -19,18 +19,32 @@ The project uses datasets from the [LinCE benchmark](https://ritual.uh.edu/lince
 ```bash
 git clone https://github.com/Sean652039/code_switching_LID.git
 ```
-**2. Install dependencies**
+**2. Install Dependencies**:
 ```bash
 pip install -r requirements.txt
 ```
-**3. Train the model**
+**3. Train the Model**:
 ```bash
-python train.py --dataset_path /path/to/dataset --mask_probability 0.1
+python train.py
 ```
-**4. Evaluate the model**
+**4. Analyze Performance**: Generate performance plots based on training logs
 ```bash
-python evaluate.py --dataset_path /path/to/eval_dataset
+python performance_vs_prob_plot.py
 ```
+**5. Dataset Analysis**: Visualize dataset statistics
+```bash
+python analysis.py
+```
+
+## Technologies Used
+
+- **Python**: The primary programming language used for all scripts
+- **PyTorch**: For building and fine-tuning the Multilingual BERT model
+- **Transformers**: To utilize pre-trained transformer models
+- **Scikit-learn**: For evaluation metrics like F1-score, precision, and recall
+- **Matplotlib**: For creating visualizations such as label distributions and performance plots
+- **NumPy**: For numerical operations and dataset preprocessing
+- **Tqdm**: To display progress bars during training and evaluation
 
 ## Acknowledgments
 
