@@ -3,7 +3,7 @@ from transformers import AutoModelForTokenClassification
 from transformers import get_linear_schedule_with_warmup
 import torch
 from torch.nn.utils import clip_grad_norm_
-from CS_dataset import CSDataset
+from data.CS_dataset import CSDataset
 from loss import HybridLoss
 
 from sklearn.metrics import f1_score, classification_report, precision_score, recall_score, accuracy_score
