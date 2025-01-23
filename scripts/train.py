@@ -3,7 +3,7 @@ from transformers import AutoModelForTokenClassification
 from transformers import get_linear_schedule_with_warmup
 import torch
 from torch.nn.utils import clip_grad_norm_
-from CS_Dataset import CSDataset
+from CS_dataset import CSDataset
 from loss import HybridLoss
 
 from sklearn.metrics import f1_score, classification_report, precision_score, recall_score, accuracy_score
@@ -147,6 +147,9 @@ def evaluate_model(model, test_dataset, device):
     return metrics
 
 def train(config, mask_probability):
+    """
+    Main training function
+    """
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     elif torch.cuda.is_available():
@@ -154,9 +157,6 @@ def train(config, mask_probability):
     else:
         device = torch.device("cpu")
 
-    """
-    Main training function
-    """
     logger = setup_logging()
     set_seed(config['seed'])
 
@@ -366,5 +366,3 @@ if __name__ == "__main__":
         # print(f"  F1 Weighted: {test_metrics['f1_weighted']:.4f}")
         # print(f"  Precision: {test_metrics['precision_macro']:.4f}")
         # print(f"  Recall: {test_metrics['recall_macro']:.4f}")
-
-

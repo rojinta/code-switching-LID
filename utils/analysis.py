@@ -1,4 +1,4 @@
-from CS_Dataset import CSDataset
+from data.CS_dataset import CSDataset
 from transformers import AutoTokenizer
 
 import matplotlib.pyplot as plt
